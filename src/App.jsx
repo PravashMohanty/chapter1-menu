@@ -541,7 +541,7 @@ export default function App() {
 
   const handleVerifyPin = (e) => {
     e.preventDefault();
-    if (enteredPin === '1234') { // Change '1234' to your custom PIN anytime
+    if (enteredPin === '2026') { // Change '1234' to your custom PIN anytime
       setIsCounterAuthenticated(true);
       setShowPinModal(false);
       setActiveView('counter');
@@ -1331,7 +1331,7 @@ export default function App() {
               Staff Access Only
             </h3>
             <p className="text-xs text-stone-500 mt-1">
-              Enter 4-digit counter PIN (Default: 1234)
+              Enter 4-digit staff PIN
             </p>
 
             <form onSubmit={handleVerifyPin} className="mt-4 space-y-3">
