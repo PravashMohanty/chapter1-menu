@@ -649,4 +649,17 @@ export default function App() {
     }
     if (cartItemsList.length === 0) return;
 
-    const new
+const newOrder = {
+  id: `ORD-${Math.floor(100 + Math.random() * 900)}`,
+  customerName: customerName.trim(),
+  phone: customerPhone.trim() || 'N/A',
+  table: tableNumber,
+  items: cartItemsList.map(item => ({
+    name: item.name,
+    quantity: item.quantity,
+    price: item.price
+  })),
+  total: grandTotal,
+  status: 'Pending',
+  createdAt: 'Just now'
+};
