@@ -643,6 +643,7 @@ export default function App() {
       customerName: customerName.trim(),
       phone: customerPhone.trim() || 'N/A',
       table: tableNumber,
+      date: new Date().toISOString().split('T')[0],
       items: cartItemsList.map(item => ({
         name: item.name,
         quantity: item.quantity,
@@ -673,7 +674,9 @@ export default function App() {
     update(ref(db, `orders/${order.firebaseKey}`), { status: newStatus });
   };
 
-  const pendingOrdersCount = orders.filter((o) => o.status === 'Pending').length;
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todaysOrders = orders.filter((order) => !order.date || order.date === todayStr);
+  const pendingOrdersCount = todaysOrders.filter((o) => o.status === 'Pending').length;
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-stone-800 font-sans flex flex-col antialiased">
@@ -951,7 +954,7 @@ export default function App() {
 
             <div className="flex flex-wrap gap-1.5">
               {['ALL', 'Pending', 'Preparing', 'Ready', 'Completed'].map((status) => {
-                const count = status === 'ALL' ? orders.length : orders.filter(o => o.status === status).length;
+                const count = status === 'ALL' ? todaysOrders.length : todaysOrders.filter(o => o.status === status).length;
                 return (
                   <button
                     key={status}
@@ -972,7 +975,7 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {orders
+              {todaysOrders
                 .filter((order) => counterFilter === 'ALL' || order.status === counterFilter)
                 .map((order) => {
                   const getStatusBadge = () => {
