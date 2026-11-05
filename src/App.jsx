@@ -674,10 +674,43 @@ export default function App() {
     update(ref(db, `orders/${order.firebaseKey}`), { status: newStatus });
   };
 
+  // --- Daily Order Filter & Counts ---
   const todayStr = new Date().toISOString().split('T')[0];
   const todaysOrders = orders.filter((order) => !order.date || order.date === todayStr);
   const pendingOrdersCount = todaysOrders.filter((o) => o.status === 'Pending').length;
 
+  // --- 1-Click CSV Export Handler ---
+  const handleExportTodayCSV = () => {
+    if (todaysOrders.length === 0) {
+      alert("No orders recorded for today yet.");
+      return;
+    }
+
+    const headers = ["Order ID", "Date", "Time", "Customer Name", "Phone", "Table", "Items Summary", "Total (INR)", "Status"];
+
+    const rows = todaysOrders.map((ord) => [
+      ord.id,
+      ord.date || todayStr,
+      ord.createdAt || "N/A",
+      `"${ord.customerName}"`,
+      `"${ord.phone || 'N/A'}"`,
+      ord.table,
+      `"${(ord.items || []).map(i => `${i.name} (x${i.quantity})`).join(', ')}"`,
+      ord.total,
+      ord.status
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Chapter1_Orders_${todayStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-stone-800 font-sans flex flex-col antialiased">
       {/* Top Header */}
@@ -941,6 +974,12 @@ export default function App() {
                   {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
                   <span>{soundEnabled ? 'Chime ON' : 'Chime MUTED'}</span>
                 </button>
+                <button
+  onClick={handleExportTodayCSV}
+  className="flex items-center gap-1.5 bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-semibold px-3 py-1.5 rounded-xl border border-stone-700 transition-colors shadow-sm"
+>
+  <span>📥 Export Today's CSV</span>
+</button>
 
                 <button
                   onClick={handleLockCounter}
