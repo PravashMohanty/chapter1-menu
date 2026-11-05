@@ -1,4 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { db } from './firebase';
+import { ref, push, onValue, update } from 'firebase/database';
 import { 
   Coffee, 
   ShoppingBag, 
@@ -481,6 +483,8 @@ const CATEGORIES = [
   'Cakes'
 ];
 
+const TABLES = ['Table 1', 'Table 2', 'Table 3', 'Table 4', 'Table 5', 'Takeaway Counter'];
+
 export default function App() {
   const [activeView, setActiveView] = useState('customer');
 
@@ -490,8 +494,8 @@ export default function App() {
   const [enteredPin, setEnteredPin] = useState('');
   const [pinError, setPinError] = useState(false);
 
-  // Customer State
-  const [tableNumber, setTableNumber] = useState('Table 3');
+  // Customer State (Defaults to Table 1, 5-table setup)
+  const [tableNumber, setTableNumber] = useState('Table 1');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [cart, setCart] = useState({});
@@ -501,40 +505,29 @@ export default function App() {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [placedOrderInfo, setPlacedOrderInfo] = useState(null);
 
-  // Counter Desk State
-  const [orders, setOrders] = useState([
-    {
-      id: 'ORD-101',
-      customerName: 'Aman Dash',
-      phone: '7205184945',
-      table: 'Table 2',
-      items: [
-        { name: 'Cold Coffee', quantity: 2, price: 80 },
-        { name: 'Veg Fried Momo (6 pcs)', quantity: 1, price: 50 },
-        { name: 'Dark Chocolate Pastry', quantity: 2, price: 50 }
-      ],
-      total: 310,
-      status: 'Preparing',
-      createdAt: '5 mins ago'
-    },
-    {
-      id: 'ORD-102',
-      customerName: 'Priya Nayak',
-      phone: '7008353510',
-      table: 'Table 4',
-      items: [
-        { name: 'Combo 3: Veggie Pizza + Chocolate Cold Coffee', quantity: 1, price: 215 },
-        { name: 'Brown Sugar Milk Tea (Boba)', quantity: 1, price: 130 }
-      ],
-      total: 345,
-      status: 'Pending',
-      createdAt: 'Just now'
-    }
-  ]);
+  // Live Orders from Firebase Realtime Database
+  const [orders, setOrders] = useState([]);
   const [counterFilter, setCounterFilter] = useState('ALL');
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [showQrModal, setShowQrModal] = useState(false);
-  const [selectedQrTable, setSelectedQrTable] = useState('Table 1');
+
+  // Subscribe to Firebase Realtime Database
+  useEffect(() => {
+    const ordersRef = ref(db, 'orders');
+    const unsubscribe = onValue(ordersRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const orderList = Object.keys(data).map((key) => ({
+          firebaseKey: key,
+          ...data[key]
+        })).reverse();
+        setOrders(orderList);
+      } else {
+        setOrders([]);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const handleSwitchToCounter = () => {
     if (isCounterAuthenticated) {
@@ -548,7 +541,7 @@ export default function App() {
 
   const handleVerifyPin = (e) => {
     e.preventDefault();
-    if (enteredPin === '2026') {
+    if (enteredPin === '1234') { // Change '1234' to your custom PIN anytime
       setIsCounterAuthenticated(true);
       setShowPinModal(false);
       setActiveView('counter');
@@ -645,7 +638,7 @@ export default function App() {
     }
     if (cartItemsList.length === 0) return;
 
-    const newOrder = {
+    const newOrderData = {
       id: `ORD-${Math.floor(100 + Math.random() * 900)}`,
       customerName: customerName.trim(),
       phone: customerPhone.trim() || 'N/A',
@@ -657,22 +650,27 @@ export default function App() {
       })),
       total: grandTotal,
       status: 'Pending',
-      createdAt: 'Just now'
+      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
-    setOrders((prev) => [newOrder, ...prev]);
-    playAlertSound();
-
-    setPlacedOrderInfo(newOrder);
-    setCart({});
-    setIsCartOpen(false);
-    setShowOrderModal(true);
+    // Push to Firebase Realtime Database
+    push(ref(db, 'orders'), newOrderData)
+      .then(() => {
+        playAlertSound();
+        setPlacedOrderInfo(newOrderData);
+        setCart({});
+        setIsCartOpen(false);
+        setShowOrderModal(true);
+      })
+      .catch((err) => {
+        console.error(err);
+        alert("Failed to submit order. Please check your internet connection.");
+      });
   };
 
-  const updateOrderStatus = (orderId, newStatus) => {
-    setOrders((prev) =>
-      prev.map((ord) => (ord.id === orderId ? { ...ord, status: newStatus } : ord))
-    );
+  const updateOrderStatus = (order, newStatus) => {
+    if (!order.firebaseKey) return;
+    update(ref(db, `orders/${order.firebaseKey}`), { status: newStatus });
   };
 
   const pendingOrdersCount = orders.filter((o) => o.status === 'Pending').length;
@@ -761,22 +759,13 @@ export default function App() {
                       onChange={(e) => setTableNumber(e.target.value)}
                       className="bg-transparent text-white font-semibold text-xs md:text-sm outline-none cursor-pointer"
                     >
-                      {[...Array(10)].map((_, i) => (
-                        <option key={i} value={`Table ${i + 1}`} className="bg-stone-900 text-white">
-                          Table {i + 1}
+                      {TABLES.map((tbl) => (
+                        <option key={tbl} value={tbl} className="bg-stone-900 text-white">
+                          {tbl}
                         </option>
                       ))}
-                      <option value="Takeaway Counter" className="bg-stone-900 text-white">Takeaway / Parcel</option>
                     </select>
                   </div>
-
-                  <button
-                    onClick={() => setShowQrModal(true)}
-                    className="inline-flex items-center gap-1.5 text-xs bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 border border-amber-400/30 px-3 py-2 rounded-xl transition-all"
-                  >
-                    <QrCode className="w-4 h-4" />
-                    <span>Table QR Standee</span>
-                  </button>
 
                   <div className="text-[11px] text-stone-400 flex items-center gap-1">
                     <Phone className="w-3 h-3 text-amber-400" />
@@ -933,7 +922,7 @@ export default function App() {
                   <h2 className="text-xl font-bold font-serif">Kitchen & Billing Counter</h2>
                 </div>
                 <p className="text-xs text-stone-400 mt-1">
-                  Live orders placed by customers from Chapter-1 cafe tables.
+                  Live orders syncing from Firebase Realtime Database.
                 </p>
               </div>
 
@@ -948,14 +937,6 @@ export default function App() {
                 >
                   {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
                   <span>{soundEnabled ? 'Chime ON' : 'Chime MUTED'}</span>
-                </button>
-
-                <button
-                  onClick={() => setShowQrModal(true)}
-                  className="flex items-center gap-1.5 text-xs bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 px-3 py-1.5 rounded-xl font-medium"
-                >
-                  <QrCode className="w-4 h-4" />
-                  <span>Table QRs</span>
                 </button>
 
                 <button
@@ -1011,7 +992,7 @@ export default function App() {
 
                   return (
                     <div
-                      key={order.id}
+                      key={order.firebaseKey || order.id}
                       className={`bg-white rounded-2xl border-2 p-4 flex flex-col justify-between shadow-sm transition-all ${
                         order.status === 'Pending' ? 'border-red-400 ring-2 ring-red-100' : 'border-stone-200'
                       }`}
@@ -1052,7 +1033,7 @@ export default function App() {
                         </div>
 
                         <div className="mt-3 space-y-1.5">
-                          {order.items.map((it, idx) => (
+                          {order.items?.map((it, idx) => (
                             <div key={idx} className="flex justify-between items-center text-xs">
                               <span className="text-stone-700">
                                 <span className="font-bold text-amber-900 mr-1.5">
@@ -1075,7 +1056,7 @@ export default function App() {
                         <div className="grid grid-cols-2 gap-2 text-xs">
                           {order.status === 'Pending' && (
                             <button
-                              onClick={() => updateOrderStatus(order.id, 'Preparing')}
+                              onClick={() => updateOrderStatus(order, 'Preparing')}
                               className="col-span-2 bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 rounded-xl transition-colors flex items-center justify-center gap-1.5"
                             >
                               <ChefHat className="w-4 h-4" />
@@ -1085,7 +1066,7 @@ export default function App() {
 
                           {order.status === 'Preparing' && (
                             <button
-                              onClick={() => updateOrderStatus(order.id, 'Ready')}
+                              onClick={() => updateOrderStatus(order, 'Ready')}
                               className="col-span-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-xl transition-colors flex items-center justify-center gap-1.5"
                             >
                               <Bell className="w-4 h-4" />
@@ -1095,7 +1076,7 @@ export default function App() {
 
                           {order.status === 'Ready' && (
                             <button
-                              onClick={() => updateOrderStatus(order.id, 'Completed')}
+                              onClick={() => updateOrderStatus(order, 'Completed')}
                               className="col-span-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl transition-colors flex items-center justify-center gap-1.5"
                             >
                               <CheckCircle2 className="w-4 h-4" />
@@ -1120,7 +1101,7 @@ export default function App() {
               <div className="text-center py-16 bg-white rounded-2xl border border-stone-200">
                 <ChefHat className="w-10 h-10 text-stone-300 mx-auto mb-2" />
                 <h4 className="font-bold text-stone-700 text-sm">No Active Kitchen Orders</h4>
-                <p className="text-xs text-stone-400 mt-1">Orders from customers will chime in here.</p>
+                <p className="text-xs text-stone-400 mt-1">Live orders placed by customers will appear here.</p>
               </div>
             )}
           </div>
@@ -1226,6 +1207,21 @@ export default function App() {
               <form onSubmit={handlePlaceOrder} className="space-y-3">
                 <div className="space-y-1">
                   <label className="block text-xs font-bold text-stone-700">
+                    Table Number <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={tableNumber}
+                    onChange={(e) => setTableNumber(e.target.value)}
+                    className="w-full px-3 py-2 bg-white rounded-xl border border-stone-300 text-xs font-semibold focus:ring-2 focus:ring-amber-500 outline-none"
+                  >
+                    {TABLES.map((tbl) => (
+                      <option key={tbl} value={tbl}>{tbl}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-stone-700">
                     Your Name <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
@@ -1304,8 +1300,8 @@ export default function App() {
                 <span className="font-bold text-amber-800">{placedOrderInfo.table}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-stone-500">Prep Time:</span>
-                <span className="font-semibold text-stone-700">10 - 15 mins</span>
+                <span className="text-stone-500">Time:</span>
+                <span className="font-semibold text-stone-700">{placedOrderInfo.createdAt}</span>
               </div>
               <div className="flex justify-between pt-1 border-t border-stone-200 font-bold text-stone-900">
                 <span>Total Amount:</span>
@@ -1335,7 +1331,7 @@ export default function App() {
               Staff Access Only
             </h3>
             <p className="text-xs text-stone-500 mt-1">
-              Enter 4-digit counter PIN
+              Enter 4-digit counter PIN (Default: 1234)
             </p>
 
             <form onSubmit={handleVerifyPin} className="mt-4 space-y-3">
@@ -1371,105 +1367,6 @@ export default function App() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* QR Code Standee Modal */}
-      {showQrModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl relative text-center">
-            <button
-              onClick={() => setShowQrModal(false)}
-              className="absolute right-4 top-4 text-stone-400 hover:text-stone-700"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="inline-flex p-2.5 rounded-2xl bg-amber-100 text-amber-900 mb-2">
-              <QrCode className="w-6 h-6" />
-            </div>
-            <h3 className="font-serif font-bold text-lg text-stone-900">
-              Table QR Standee
-            </h3>
-            <p className="text-xs text-stone-500 mt-0.5">
-              Select table to test or preview QR standee
-            </p>
-
-            <div className="mt-3 flex items-center justify-center gap-2">
-              <span className="text-xs font-bold text-stone-700">Select Table:</span>
-              <select
-                value={selectedQrTable}
-                onChange={(e) => setSelectedQrTable(e.target.value)}
-                className="bg-stone-100 border border-stone-300 rounded-lg text-xs font-semibold px-2.5 py-1 outline-none"
-              >
-                {[...Array(10)].map((_, i) => (
-                  <option key={i} value={`Table ${i + 1}`}>
-                    Table {i + 1}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="mt-4 p-4 bg-amber-50/60 border-2 border-dashed border-amber-300 rounded-2xl flex flex-col items-center">
-              <div className="bg-white p-3 rounded-xl shadow-sm border border-stone-200">
-                <svg className="w-32 h-32 mx-auto text-stone-900" viewBox="0 0 100 100" fill="currentColor">
-                  <rect x="5" y="5" width="25" height="25" rx="3" fill="#292524" />
-                  <rect x="9" y="9" width="17" height="17" rx="2" fill="white" />
-                  <rect x="13" y="13" width="9" height="9" fill="#78350F" />
-
-                  <rect x="70" y="5" width="25" height="25" rx="3" fill="#292524" />
-                  <rect x="74" y="9" width="17" height="17" rx="2" fill="white" />
-                  <rect x="78" y="13" width="9" height="9" fill="#78350F" />
-
-                  <rect x="5" y="70" width="25" height="25" rx="3" fill="#292524" />
-                  <rect x="9" y="74" width="17" height="17" rx="2" fill="white" />
-                  <rect x="13" y="78" width="9" height="9" fill="#78350F" />
-
-                  <rect x="36" y="8" width="8" height="8" rx="1" fill="#292524" />
-                  <rect x="50" y="8" width="8" height="4" rx="1" fill="#78350F" />
-                  <rect x="42" y="20" width="12" height="6" rx="1" fill="#292524" />
-                  <rect x="10" y="38" width="8" height="8" rx="1" fill="#292524" />
-                  <rect x="22" y="44" width="6" height="12" rx="1" fill="#78350F" />
-                  <rect x="34" y="36" width="16" height="8" rx="1" fill="#292524" />
-                  <rect x="54" y="36" width="8" height="16" rx="1" fill="#78350F" />
-                  <rect x="68" y="40" width="12" height="8" rx="1" fill="#292524" />
-                  <rect x="84" y="36" width="6" height="14" rx="1" fill="#292524" />
-
-                  <rect x="36" y="58" width="8" height="8" rx="1" fill="#78350F" />
-                  <rect x="48" y="56" width="10" height="12" rx="1" fill="#292524" />
-                  <rect x="64" y="58" width="14" height="6" rx="1" fill="#292524" />
-                  <rect x="82" y="58" width="8" height="12" rx="1" fill="#78350F" />
-
-                  <rect x="36" y="74" width="14" height="6" rx="1" fill="#292524" />
-                  <rect x="54" y="74" width="8" height="12" rx="1" fill="#78350F" />
-                  <rect x="66" y="72" width="12" height="14" rx="1" fill="#292524" />
-                  <rect x="82" y="78" width="8" height="8" rx="1" fill="#292524" />
-
-                  <rect x="44" y="44" width="12" height="12" rx="2" fill="#D97706" />
-                </svg>
-              </div>
-
-              <div className="mt-2.5">
-                <span className="font-serif font-bold text-stone-900 text-xs">
-                  CHAPTER-1 CAFÉ & BAKERY
-                </span>
-                <p className="text-[11px] font-semibold text-amber-800">
-                  {selectedQrTable} • Jagatsinghpur
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={() => {
-                setTableNumber(selectedQrTable);
-                setShowQrModal(false);
-                setActiveView('customer');
-              }}
-              className="mt-3.5 w-full bg-amber-800 hover:bg-amber-900 text-white font-bold py-2 rounded-xl text-xs transition-colors"
-            >
-              Simulate Scanning {selectedQrTable}
-            </button>
           </div>
         </div>
       )}
